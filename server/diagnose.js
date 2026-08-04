@@ -12,47 +12,45 @@ Return your answer as JSON with this exact shape, and nothing else:
 }`;
 
 export async function generateSolution(problemDescription) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
     // Stub response so the app is fully testable before a real API key is added
     return {
-      diagnosis: "AI engine not connected yet — this is placeholder output. Add ANTHROPIC_API_KEY to your environment variables to enable real diagnoses.",
+      diagnosis: "AI engine not connected yet — this is placeholder output. Add GEMINI_API_KEY to your environment variables to enable real diagnoses.",
       steps: [
-        { text: "Add your Anthropic API key to the server environment variables.", risk: "none" },
+        { text: "Add your Gemini API key to the server environment variables.", risk: "none" },
         { text: "Restart the server — real AI-generated solutions will appear after that.", risk: "none" }
       ],
       device_type: "unknown"
     };
   }
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01"
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: problemDescription }]
-    })
-  });
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [{ role: "user", parts: [{ text: problemDescription }] }],
+        generationConfig: { responseMimeType: "application/json" }
+      })
+    }
+  );
 
   if (!response.ok) {
-    throw new Error(`AI service error: ${response.status}`);
+    const errText = await response.text();
+    throw new Error(`AI service error: ${response.status} ${errText}`);
   }
 
   const data = await response.json();
-  const text = data.content.map(b => b.text || '').join('').trim();
+  const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim() || '';
   const clean = text.replace(/^```json\s*|```$/g, '').trim();
 
   try {
     return JSON.parse(clean);
   } catch {
-    // If the model didn't return clean JSON, wrap it as a single step
     return {
       diagnosis: "Here's what I found:",
       steps: [{ text, risk: "none" }],
